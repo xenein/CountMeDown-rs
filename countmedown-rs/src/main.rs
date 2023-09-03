@@ -18,7 +18,7 @@ fn format_time(secs: i64) -> String {
 fn get_seconds_until_time(target_time: &str) -> u32 {
     let current: DateTime<Local> = Local::now();
 
-    let mut parts: Vec<u32> =  target_time.split(":").map(|x| x.parse::<u32>().unwrap()).collect();
+    let mut parts: Vec<u32> =  target_time.split(':').map(|x| x.parse::<u32>().unwrap()).collect();
 
     if parts.len() == 1 {
         parts.push(0);
@@ -32,7 +32,7 @@ fn get_seconds_until_time(target_time: &str) -> u32 {
     let secs = target.signed_duration_since(current).num_seconds();
 
     if secs < 0 {
-        target = target + Duration::days(1);
+        target += Duration::days(1);
         target.signed_duration_since(current).num_seconds() as u32
     } else {
         secs as u32
@@ -41,7 +41,7 @@ fn get_seconds_until_time(target_time: &str) -> u32 {
 
 
 fn get_seconds_from_mixed_format(input: &str) -> Result<Duration, ParseIntError> {
-    let parts: Vec<&str> = input.split(":").collect();
+    let parts: Vec<&str> = input.split(':').collect();
 
     let mut factor: i64 = 1;
     let mut seconds: i64 = 0;
@@ -73,7 +73,7 @@ fn count_me_down( seconds: u32, prefix: &str, ending: &str, step: usize, filepat
     while Local::now().timestamp() < end.timestamp() {
         let line = format!("{} {}", prefix, format_time(countdown_seconds));
         write_to_file(&line, filepath, verbose);
-        countdown_seconds = countdown_seconds - step as i64;
+        countdown_seconds -= step as i64;
         thread::sleep(std::time::Duration::from_secs(step as u64));
     }
 
@@ -108,12 +108,11 @@ fn main() {
     // let verbose: bool = true;
     let cli = Cli::parse();
     
-    let seconds;
-    if cli.until {
-        seconds = get_seconds_until_time(&cli.time_in);
+    let seconds: u32 = if cli.until {
+        get_seconds_until_time(&cli.time_in)
     } else {
-        seconds = get_seconds_from_mixed_format(&cli.time_in).unwrap().num_seconds() as u32;
-    }
+        get_seconds_from_mixed_format(&cli.time_in).unwrap().num_seconds() as u32
+    };
 
     let prefix = cli.prefix.unwrap_or("".into());
     let ending = cli.ending.unwrap_or("".into());
