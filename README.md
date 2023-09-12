@@ -31,6 +31,15 @@ sudo xattr -r -d com.apple.quarantine ./countmedown-rs-darwin-arm64
 chmod +x countemdown-rs-darwin.arm64
 ```
 
+### mehr? // advanced?
+
+CountMeDown-rs kann auch auf einer Kommandozeile genutzt werden. 
+CountMeDown-rs can be used on command line.
+
+```bash
+./countmedown-rs-darwin-arm64 --help
+```
+
 ## Probleme? // Problems?
 
 Wenn etwas nicht funktioniert, lege gern ein Issue dafür an.
@@ -49,6 +58,8 @@ Planned features include:
 
 - Sound am Ende des Countdown abspielen // play sound when timer runs out
 - Zieluhrzeit statt Ablaufzeit angeben // enter a target time instead of a duration
+- Mehr Dokumentation // more documentation
+- ein paar Tests wären nice // add some tests
 
 ## Selbst bauen // build yourself
 
