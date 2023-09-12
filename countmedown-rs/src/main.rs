@@ -1,8 +1,38 @@
-use std::num::ParseIntError;
-use std::fs::write;
-use std::thread;
+use std::{num::ParseIntError, env, path::PathBuf, env::current_dir, fs::write, thread};
 use chrono::{Duration, DateTime, Local, Timelike};
+use slint::{Color, SharedString};
+use rfd::FileDialog;
 use clap::Parser;
+
+slint::include_modules!();
+
+fn validate_string_inputs(s: &str, colon_allowed: bool) -> bool {
+    let mut allowed_chars = vec!['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    if colon_allowed {
+        allowed_chars.push(':');
+    }
+
+    for symbol in s.chars() {
+        if !allowed_chars.contains(&symbol) {
+            return false;
+        }
+    }
+    true
+}
+
+fn get_new_color(valid: bool, background: slint::Color) -> slint::Brush {
+    if valid {
+        if background == Color::from_argb_u8(255, 250 , 250, 250) {
+            Color::from_argb_u8(230, 0, 0, 0).into()
+        } else if background == Color::from_argb_u8(255, 28, 28, 28) {
+            Color::from_argb_u8(255, 255, 255, 255).into()
+        } else {
+            Color::from_rgb_u8(0, 0, 0).into()
+        }
+    } else {
+        Color::from_rgb_u8(200, 12, 12).into()
+    }
+}
 
 fn format_time(secs: i64) -> String {
 
@@ -99,28 +129,132 @@ pub struct Cli {
     until: bool,
 }
 
-fn main() {
-    // let seconds: u32 = 15;
-    // let prefix = "start in: ";
-    // let ending = "miau"; 
-    // let step: usize = 2;
-    // let filepath = "./time.txt";
-    // let verbose: bool = true;
-    let cli = Cli::parse();
+fn main() -> Result<(), slint::PlatformError> {
+    let prefix: String;
+    let ending: String;
+    let step: usize;
+    let filepath: String;
+    let verbose: bool;
+    let seconds: u32;
     
-    let seconds: u32 = if cli.until {
-        get_seconds_until_time(&cli.time_in)
+    let args: Vec<String> = env::args().collect();
+    let any_args = args.len() > 1;
+
+    if any_args {
+        // let seconds: u32 = 15;
+        // let prefix = "start in: ";
+        // let ending = "miau"; 
+        // let step: usize = 2;
+        // let filepath = "./time.txt";
+        // let verbose: bool = true;
+        let cli = Cli::parse();
+        
+        seconds = if cli.until {
+            get_seconds_until_time(&cli.time_in)
+        } else {
+            get_seconds_from_mixed_format(&cli.time_in).unwrap().num_seconds() as u32
+        };
+
+        prefix = cli.prefix.unwrap_or("".into());
+        ending = cli.ending.unwrap_or("".into());
+        step = cli.step;
+        filepath = cli.file.unwrap_or("./time.txt".into());
+        verbose = cli.verbose;
+
+        count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
+        Ok(())
+        
     } else {
-        get_seconds_from_mixed_format(&cli.time_in).unwrap().num_seconds() as u32
-    };
+        let ui = CountMeDownGUI::new()?;
 
-    let prefix = cli.prefix.unwrap_or("".into());
-    let ending = cli.ending.unwrap_or("".into());
-    let step = cli.step;
-    let filepath = cli.file.unwrap_or("./time.txt".into());
-    let verbose = cli.verbose;
-    
+        let ui_handle = ui.as_weak();
+        let ui_handle2 = ui.as_weak();
+        let ui_handle3 = ui.as_weak();
+        let ui_handle_run = ui.as_weak();
+
+        ui.on_check_time_in(move |val: SharedString| {
+            let valid = validate_string_inputs(&val, true);
+            let ui = ui_handle.unwrap();
+
+            ui.set_time_valid(valid);
+            let new_color = get_new_color(valid, ui.get_bg());
+
+            ui.set_time_in_label(new_color);
+        });
+
+        ui.on_check_step_in(move |val: SharedString| {
+            let valid = validate_string_inputs(&val, false);
+            let ui = ui_handle3.unwrap();
+
+            ui.set_step_valid(valid);
+            let new_color = get_new_color(valid, ui.get_bg());
+            ui.set_step_label_color(new_color);
+        });
+
+        ui.on_open_file_dialog(move |path| {   
+            let ui = ui_handle2.unwrap();     
+            let startfile: PathBuf;
+            let filename: &str;
+            if path == "Pick" {
+                startfile = current_dir().unwrap().join("time.txt");
+                filename = "time.txt";
+            } else {
+                startfile = PathBuf::from(path.as_str());
+                filename = startfile.file_name().unwrap().to_str().unwrap();
+            }
 
 
-    count_me_down(seconds, &prefix, &ending, step, &filepath, verbose)  
+            let savefile = FileDialog::new()
+                .add_filter("text", &["txt"])
+                .set_directory(startfile.parent().unwrap())
+                .set_file_name(filename)
+                .save_file();
+
+            match savefile {
+                Some(ref file) => {
+                    ui.set_file_path(file.to_str().unwrap().into());
+                    ui.set_file_name(file.file_name().unwrap().to_str().unwrap().into());
+                },
+                None => {
+                    ui.set_file_path(startfile.to_str().unwrap().into());
+                    ui.set_file_name(startfile.file_name().unwrap().to_str().unwrap().into());
+                }
+            }
+        });
+
+        ui.on_run_clicked(move |enabled| {
+            let ui = ui_handle_run.unwrap();
+            if enabled {
+                println!("Time: {}", ui.get_time_text());
+                println!("Step: {}", ui.get_step_size());
+                println!("File: {}", ui.get_file_path());
+                println!("Prefix: {}", ui.get_prefix_text());
+                println!("Ending: {}", ui.get_ending_text());
+
+                let prefix: String =
+                if ui.get_prefix_text().as_str().to_owned().is_empty() {
+                    "".into()
+                } else {
+                    ui.get_prefix_text().as_str().to_owned()
+                };
+
+                let ending: String =
+                if ui.get_ending_text().as_str().to_owned().is_empty() {
+                    "".into()
+                } else {
+                    ui.get_ending_text().as_str().to_owned()
+                };
+
+                let filepath: String = ui.get_file_path().as_str().to_owned();
+                
+                let step: usize = ui.get_step_size().parse().unwrap_or(1);
+                let seconds = get_seconds_from_mixed_format(ui.get_time_text().as_str()).unwrap().num_seconds() as u32;
+                let verbose = true;
+
+                count_me_down(seconds, &prefix, &ending, step, &filepath, verbose)  
+            }
+        });
+
+        ui.run()
+    }
 }

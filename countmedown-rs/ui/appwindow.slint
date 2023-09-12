@@ -1,0 +1,108 @@
+import { LineEdit, Button, VerticalBox } from "std-widgets.slint";
+    export component CountMeDownGUI inherits Window {
+
+        in-out property <bool> step_valid: true;
+        in-out property <bool> time_valid: true;
+        
+        in-out property<bool> valid: step-valid && time-valid;
+        in-out property <brush> time_in_label <=> time-label.color;
+        in-out property <color> bg: {root.background};
+        callback check-time-in(string);
+        
+        in-out property <string> file_name <=> file-button.text;
+        in-out property <string> file_path;
+        callback open_file_dialog(string);
+
+        callback check-step-in(string);
+        in-out property <brush> step_label_color <=> step_label.color;
+
+        out property <string> prefix_text <=> prefix_box.text;
+        out property <string> ending_text <=> ending_box.text;
+        out property <string> step_size <=> step_input.text;
+        out property <string> time_text <=> time_in.text;
+        callback run-clicked(bool);
+
+        title: "CountMeDown";
+
+        vbox := VerticalBox {
+            alignment: start;       
+            title_text := Text {
+                text: "CountMeDown";
+                font-size: 24px;
+                horizontal-alignment: center;
+            }
+
+            time_in_box := HorizontalLayout {
+                padding-top: 10px;
+                alignment: end;
+                time_label := Text {
+                    text: "Time: ";
+                    vertical-alignment: center;
+                }
+                time_in := LineEdit {
+                    placeholder-text: "10:00";
+                    edited => {root.check-time-in(self.text);} 
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                step_label := Text {
+                    text: "Step: ";
+                    vertical-alignment: center;
+                }
+                step_input := LineEdit {
+                    placeholder-text: 1;
+                    edited => {root.check-step-in(self.text);}
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                Text {
+                    text: "File: ";
+                    vertical-alignment: center;
+                }
+                file-button := Button {
+                    width: 162px;
+                    text: "Pick";
+                    clicked => {root.open_file_dialog(self.text);}
+                }
+            }
+
+
+            HorizontalLayout {
+                alignment: end;
+                Text {
+                    text: "Prefix: ";
+                    vertical-alignment: center;
+                }
+                prefix_box := LineEdit {
+                    placeholder-text: "Start in:";
+                    
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                Text {
+                    text: "Ending: ";
+                    vertical-alignment: center;
+                }
+                ending_box := LineEdit {
+                    placeholder-text: "geht gleich los";
+                    
+                }
+            }
+
+            HorizontalLayout {
+                padding-top: 10px;
+                alignment: center;
+                Button {
+                    text: "Start";
+                    enabled: root.valid;
+                    clicked => {root.run-clicked(self.enabled);}
+                }
+        }
+    }
+}
