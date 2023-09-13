@@ -1,8 +1,8 @@
-use std::{num::ParseIntError, env, path::PathBuf, env::current_dir, fs::write, thread};
-use chrono::{Duration, DateTime, Local, Timelike};
-use slint::{Color, SharedString};
-use rfd::FileDialog;
+use chrono::{DateTime, Duration, Local, Timelike};
 use clap::Parser;
+use rfd::FileDialog;
+use slint::{Color, PlatformError, SharedString};
+use std::{env, env::current_dir, fs::write, num::ParseIntError, path::PathBuf, thread};
 
 slint::include_modules!();
 
@@ -22,7 +22,7 @@ fn validate_string_inputs(s: &str, colon_allowed: bool) -> bool {
 
 fn get_new_color(valid: bool, background: slint::Color) -> slint::Brush {
     if valid {
-        if background == Color::from_argb_u8(255, 250 , 250, 250) {
+        if background == Color::from_argb_u8(255, 250, 250, 250) {
             Color::from_argb_u8(230, 0, 0, 0).into()
         } else if background == Color::from_argb_u8(255, 28, 28, 28) {
             Color::from_argb_u8(255, 255, 255, 255).into()
@@ -35,20 +35,34 @@ fn get_new_color(valid: bool, background: slint::Color) -> slint::Brush {
 }
 
 fn format_time(secs: i64) -> String {
-
     let duration = Duration::seconds(secs);
 
     if duration.num_minutes() > 59 {
-        format!("{:02}:{:02}:{:02}", duration.num_hours(), duration.num_minutes() % 60, duration.num_seconds() % 60)
+        format!(
+            "{:02}:{:02}:{:02}",
+            duration.num_hours(),
+            duration.num_minutes() % 60,
+            duration.num_seconds() % 60
+        )
     } else {
-        format!("{:02}:{:02}", duration.num_minutes(), duration.num_seconds() % 60)
+        format!(
+            "{:02}:{:02}",
+            duration.num_minutes(),
+            duration.num_seconds() % 60
+        )
     }
 }
 
-fn get_seconds_until_time(target_time: &str) -> u32 {
+fn get_seconds_until_time(target_time: &str) -> Result<u32, PlatformError> {
     let current: DateTime<Local> = Local::now();
 
-    let mut parts: Vec<u32> =  target_time.split(':').map(|x| x.parse::<u32>().unwrap()).collect();
+    let mut parts: Vec<u32> = target_time
+        .split(':')
+        .map(|x| {
+            x.parse::<u32>()
+                .map_err(|e| PlatformError::Other(e.to_string()))
+        })
+        .collect::<Result<Vec<u32>, PlatformError>>()?; // Magically transform Iterator<Item=Result<_,_>> to Result<Vec<_>,_>
 
     if parts.len() == 1 {
         parts.push(0);
@@ -57,18 +71,23 @@ fn get_seconds_until_time(target_time: &str) -> u32 {
         parts.push(0);
     }
 
-    let mut target: DateTime<Local> = current.with_hour(parts[0]).unwrap().with_minute(parts[1]).unwrap().with_second(parts[2]).unwrap();
-    
+    let mut target: DateTime<Local> = current
+        .with_hour(parts[0])
+        .ok_or(PlatformError::Other("No hours".to_string()))?
+        .with_minute(parts[1])
+        .ok_or(PlatformError::Other("No minutes".to_string()))?
+        .with_second(parts[2])
+        .ok_or(PlatformError::Other("No seconds".to_string()))?;
+
     let secs = target.signed_duration_since(current).num_seconds();
 
-    if secs < 0 {
+    Ok(if secs < 0 {
         target += Duration::days(1);
         target.signed_duration_since(current).num_seconds() as u32
     } else {
         secs as u32
-    }
+    })
 }
-
 
 fn get_seconds_from_mixed_format(input: &str) -> Result<Duration, ParseIntError> {
     let parts: Vec<&str> = input.split(':').collect();
@@ -87,17 +106,28 @@ fn get_seconds_from_mixed_format(input: &str) -> Result<Duration, ParseIntError>
 
 fn write_to_file(line: &str, filepath: &str, verbose: bool) {
     match write(filepath, line) {
-        Ok(_) => {},
-        Err(error) => {println!("{}", error)} 
+        Ok(_) => {}
+        Err(error) => {
+            println!("{}", error)
+        }
     };
     if verbose {
         println!("{}", line);
     }
 }
 
-fn count_me_down( seconds: u32, prefix: &str, ending: &str, step: usize, filepath: &str, verbose: bool) {
+fn count_me_down(
+    seconds: u32,
+    prefix: &str,
+    ending: &str,
+    step: usize,
+    filepath: &str,
+    verbose: bool,
+) -> Result<(), PlatformError> {
     let current = Local::now();
-    let end = current.checked_add_signed(Duration::seconds(seconds as i64)).unwrap();
+    let end = current
+        .checked_add_signed(Duration::seconds(seconds as i64))
+        .ok_or(PlatformError::Other("Could not add signed".to_string()))?;
 
     let mut countdown_seconds: i64 = seconds.into();
     while Local::now().timestamp() < end.timestamp() {
@@ -107,8 +137,8 @@ fn count_me_down( seconds: u32, prefix: &str, ending: &str, step: usize, filepat
         thread::sleep(std::time::Duration::from_secs(step as u64));
     }
 
-    write_to_file(ending, filepath, verbose)
-
+    write_to_file(ending, filepath, verbose);
+    Ok(())
 }
 
 #[derive(Parser)]
@@ -136,23 +166,25 @@ fn main() -> Result<(), slint::PlatformError> {
     let filepath: String;
     let verbose: bool;
     let seconds: u32;
-    
+
     let args: Vec<String> = env::args().collect();
     let any_args = args.len() > 1;
 
     if any_args {
         // let seconds: u32 = 15;
         // let prefix = "start in: ";
-        // let ending = "miau"; 
+        // let ending = "miau";
         // let step: usize = 2;
         // let filepath = "./time.txt";
         // let verbose: bool = true;
         let cli = Cli::parse();
-        
+
         seconds = if cli.until {
-            get_seconds_until_time(&cli.time_in)
+            get_seconds_until_time(&cli.time_in)?
         } else {
-            get_seconds_from_mixed_format(&cli.time_in).unwrap().num_seconds() as u32
+            get_seconds_from_mixed_format(&cli.time_in)
+                .map_err(|e| slint::PlatformError::Other(e.to_string()))?
+                .num_seconds() as u32
         };
 
         prefix = cli.prefix.unwrap_or("".into());
@@ -161,9 +193,8 @@ fn main() -> Result<(), slint::PlatformError> {
         filepath = cli.file.unwrap_or("./time.txt".into());
         verbose = cli.verbose;
 
-        count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
+        let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
         Ok(())
-        
     } else {
         let ui = CountMeDownGUI::new()?;
 
@@ -191,8 +222,8 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.set_step_label_color(new_color);
         });
 
-        ui.on_open_file_dialog(move |path| {   
-            let ui = ui_handle2.unwrap();     
+        ui.on_open_file_dialog(move |path| {
+            let ui = ui_handle2.unwrap();
             let startfile: PathBuf;
             let filename: &str;
             if path == "Pick" {
@@ -202,7 +233,6 @@ fn main() -> Result<(), slint::PlatformError> {
                 startfile = PathBuf::from(path.as_str());
                 filename = startfile.file_name().unwrap().to_str().unwrap();
             }
-
 
             let savefile = FileDialog::new()
                 .add_filter("text", &["txt"])
@@ -214,7 +244,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 Some(ref file) => {
                     ui.set_file_path(file.to_str().unwrap().into());
                     ui.set_file_name(file.file_name().unwrap().to_str().unwrap().into());
-                },
+                }
                 None => {
                     ui.set_file_path(startfile.to_str().unwrap().into());
                     ui.set_file_name(startfile.file_name().unwrap().to_str().unwrap().into());
@@ -231,27 +261,27 @@ fn main() -> Result<(), slint::PlatformError> {
                 println!("Prefix: {}", ui.get_prefix_text());
                 println!("Ending: {}", ui.get_ending_text());
 
-                let prefix: String =
-                if ui.get_prefix_text().as_str().to_owned().is_empty() {
+                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
                     "".into()
                 } else {
                     ui.get_prefix_text().as_str().to_owned()
                 };
 
-                let ending: String =
-                if ui.get_ending_text().as_str().to_owned().is_empty() {
+                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
                     "".into()
                 } else {
                     ui.get_ending_text().as_str().to_owned()
                 };
 
                 let filepath: String = ui.get_file_path().as_str().to_owned();
-                
+
                 let step: usize = ui.get_step_size().parse().unwrap_or(1);
-                let seconds = get_seconds_from_mixed_format(ui.get_time_text().as_str()).unwrap().num_seconds() as u32;
+                let seconds = get_seconds_from_mixed_format(ui.get_time_text().as_str())
+                    .unwrap_or(Duration::seconds(600))
+                    .num_seconds() as u32;
                 let verbose = true;
 
-                count_me_down(seconds, &prefix, &ending, step, &filepath, verbose)  
+                let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
             }
         });
 
