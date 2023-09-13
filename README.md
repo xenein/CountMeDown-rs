@@ -2,7 +2,8 @@
 # CountMeDown-rs
 Countdowns for your streams.
 
-![image](https://github.com/xenein/CountMeDown-rs/assets/76600392/a04eaef7-4189-43ed-84b8-ddc4cec42732)
+![image](https://github.com/xenein/CountMeDown-rs/assets/76600392/a04eaef7-4189-43ed-84b8-ddc4cec42732) ![image](https://github.com/xenein/CountMeDown-rs/assets/76600392/86dc1d0a-a1cb-45fc-9a7f-2af5a033387e)
+
 
 
 Ein Nonxens-Projekt. Meine Tools sind frei und kostenlos verwendbar.\
