@@ -48,7 +48,7 @@ fn format_time(secs: i64) -> String {
 fn get_seconds_until_time(target_time: &str) -> u32 {
     let current: DateTime<Local> = Local::now();
 
-    let mut parts: Vec<u32> =  target_time.split(':').map(|x| x.parse::<u32>().unwrap()).collect();
+    let mut parts: Vec<u32> =  target_time.split(':').map(|x| x.parse::<u32>().unwrap_or(600)).collect();
 
     if parts.len() == 1 {
         parts.push(0);
