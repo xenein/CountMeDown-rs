@@ -1,3 +1,4 @@
+
 # CountMeDown-rs
 Countdowns for your streams.
 
@@ -6,8 +7,10 @@ Countdowns for your streams.
 
 Ein Nonxens-Projekt. Meine Tools sind frei und kostenlos verwendbar.\
 Wer Geld dafür geben möchte, kann das über 
-[Ko-Fi](https://ko-fi.com/nonxens) einmalig oder regelmäßig tun.\
+Ko-Fi einmalig oder regelmäßig tun.\
 Wer dafür eine Rechnung braucht, kann eine mit ausgewiesenen Steuern bekommen.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/A0A0P60CR)
 
 ## Wie? // How?
 
