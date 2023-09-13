@@ -104,7 +104,7 @@ fn get_seconds_from_mixed_format(input: &str) -> Result<Duration, ParseIntError>
     Ok(Duration::seconds(seconds))
 }
 
-fn write_to_file(line: &str, filepath: &str, verbose: bool) {
+fn write_to_file(line: &str, filepath: &str, verbose: bool, ui_handle: &Option<CountMeDownGUI>) {
     match write(filepath, line) {
         Ok(_) => {}
         Err(error) => {
@@ -113,6 +113,10 @@ fn write_to_file(line: &str, filepath: &str, verbose: bool) {
     };
     if verbose {
         println!("{}", line);
+    }
+    if ui_handle.is_some() {
+        let ui = ui_handle.as_ref().unwrap();
+        ui.set_title_field(line.into());
     }
 }
 
@@ -123,6 +127,7 @@ fn count_me_down(
     step: usize,
     filepath: &str,
     verbose: bool,
+    ui_handle: Option<CountMeDownGUI>,
 ) -> Result<(), PlatformError> {
     let current = Local::now();
     let end = current
@@ -130,14 +135,26 @@ fn count_me_down(
         .ok_or(PlatformError::Other("Could not add signed".to_string()))?;
 
     let mut countdown_seconds: i64 = seconds.into();
+    let gui: bool = ui_handle.is_some();
+    let ui: Option<CountMeDownGUI> = if gui {
+        Some(ui_handle.unwrap().as_weak().unwrap())
+    } else {
+        None
+    };
+
     while Local::now().timestamp() < end.timestamp() {
         let line = format!("{} {}", prefix, format_time(countdown_seconds));
-        write_to_file(&line, filepath, verbose);
+        if gui {
+            write_to_file(&line, filepath, verbose, &ui);
+        } else {
+            write_to_file(&line, filepath, verbose, &None);
+        }
+
         countdown_seconds -= step as i64;
         thread::sleep(std::time::Duration::from_secs(step as u64));
     }
 
-    write_to_file(ending, filepath, verbose);
+    write_to_file(ending, filepath, verbose, &None);
     Ok(())
 }
 
@@ -193,19 +210,20 @@ fn main() -> Result<(), slint::PlatformError> {
         filepath = cli.file.unwrap_or("./time.txt".into());
         verbose = cli.verbose;
 
-        let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
+        let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose, None);
         Ok(())
     } else {
         let ui = CountMeDownGUI::new()?;
 
-        let ui_handle = ui.as_weak();
-        let ui_handle2 = ui.as_weak();
-        let ui_handle3 = ui.as_weak();
+        let ui_handle_time_in = ui.as_weak();
+        let ui_handle_file_dialog = ui.as_weak();
+        let ui_handle_step_in = ui.as_weak();
         let ui_handle_run = ui.as_weak();
+        let ui_handle_title = ui.as_weak();
 
         ui.on_check_time_in(move |val: SharedString| {
             let valid = validate_string_inputs(&val, true);
-            let ui = ui_handle.unwrap();
+            let ui = ui_handle_time_in.unwrap();
 
             ui.set_time_valid(valid);
             let new_color = get_new_color(valid, ui.get_bg());
@@ -215,7 +233,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
         ui.on_check_step_in(move |val: SharedString| {
             let valid = validate_string_inputs(&val, false);
-            let ui = ui_handle3.unwrap();
+            let ui = ui_handle_step_in.unwrap();
 
             ui.set_step_valid(valid);
             let new_color = get_new_color(valid, ui.get_bg());
@@ -223,7 +241,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
 
         ui.on_open_file_dialog(move |path| {
-            let ui = ui_handle2.unwrap();
+            let ui = ui_handle_file_dialog.unwrap();
             let startfile: PathBuf;
             let filename: &str;
             if path == "Pick" {
@@ -254,6 +272,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
         ui.on_run_clicked(move |enabled| {
             let ui = ui_handle_run.unwrap();
+            let ui_handle = ui_handle_title.unwrap();
             if enabled {
                 println!("Time: {}", ui.get_time_text());
                 println!("Step: {}", ui.get_step_size());
@@ -281,7 +300,20 @@ fn main() -> Result<(), slint::PlatformError> {
                     .num_seconds() as u32;
                 let verbose = true;
 
-                let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
+                let _ = count_me_down(
+                    seconds,
+                    &prefix,
+                    &ending,
+                    step,
+                    &filepath,
+                    verbose,
+                    Some(ui_handle),
+                );
+                if ending.is_empty() {
+                    ui.set_title_field("CountMeDown".into());
+                } else {
+                    ui.set_title_field(ending.into());
+                }
             }
         });
 
