@@ -125,8 +125,8 @@ fn write_to_file(line: &str, filepath: &str, verbose: bool, ui_handle: &Option<C
     if verbose {
         println!("{}", line);
     }
-    if ui_handle.is_some() {
-        let ui = ui_handle.as_ref().unwrap();
+
+    if let Some(ui) = ui_handle {
         ui.set_title_field(line.into());
     }
 }
@@ -146,16 +146,15 @@ fn count_me_down(
         .ok_or(PlatformError::Other("Could not add signed".to_string()))?;
 
     let mut countdown_seconds: i64 = seconds.into();
-    let gui: bool = ui_handle.is_some();
-    let ui: Option<CountMeDownGUI> = if gui {
-        Some(ui_handle.unwrap().as_weak().unwrap())
+    let ui = if let Some(gui) = ui_handle {
+        Some(gui.as_weak().unwrap())
     } else {
         None
     };
 
     while Local::now().timestamp() < end.timestamp() {
         let line = format!("{} {}", prefix, format_time(countdown_seconds));
-        if gui {
+        if ui.is_some() {
             write_to_file(&line, filepath, verbose, &ui);
         } else {
             write_to_file(&line, filepath, verbose, &None);
@@ -201,7 +200,7 @@ impl RustMeDownConfig {
             let mut config_file = base_dirs.config_local_dir().to_path_buf();
             config_file.push("CountMeDown/countMeDown.ron");
             let config_file_copy = config_file.clone();
-            let _ = create_dir_all(config_file_copy.parent().unwrap());
+            let _ = create_dir_all(config_file_copy.parent().unwrap()); // Safe unwrap, as a file always has a parent.
 
             let serialized = to_string(&self);
             if let Ok(config) = serialized {
@@ -242,6 +241,21 @@ pub struct Cli {
     time_in: String,
     #[arg(short = 'u', long, default_value_t = false)]
     until: bool,
+}
+
+fn text_or_default(s: SharedString, default: &str) -> String {
+    if s.as_str().to_owned().is_empty() {
+        default.into()
+    } else {
+        s.as_str().to_owned()
+    }
+}
+
+fn get_texts(ui: &CountMeDownGUI) -> (String, String, String) {
+    let time_in = text_or_default(ui.get_time_text(), "10:00");
+    let prefix = text_or_default(ui.get_prefix_text(), "");
+    let ending = text_or_default(ui.get_ending_text(), "");
+    (time_in, prefix, ending)
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -351,23 +365,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 println!("Prefix: {}", ui.get_prefix_text());
                 println!("Ending: {}", ui.get_ending_text());
 
-                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
-                    "10:00".into()
-                } else {
-                    ui.get_time_text().as_str().to_owned()
-                };
-
-                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_prefix_text().as_str().to_owned()
-                };
-
-                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_ending_text().as_str().to_owned()
-                };
+                let (time_in, prefix, ending) = get_texts(&ui);
 
                 let filepath: String = ui.get_file_path().as_str().to_owned();
 
@@ -405,23 +403,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let ui = ui_handle_save.unwrap();
 
             if enabled {
-                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
-                    "10:00".into()
-                } else {
-                    ui.get_time_text().as_str().to_owned()
-                };
-
-                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_prefix_text().as_str().to_owned()
-                };
-
-                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_ending_text().as_str().to_owned()
-                };
+                let (time_in, prefix, ending) = get_texts(&ui);
 
                 let filepath: String = ui.get_file_path().as_str().to_owned();
 
