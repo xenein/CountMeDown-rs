@@ -125,8 +125,8 @@ fn write_to_file(line: &str, filepath: &str, verbose: bool, ui_handle: &Option<C
     if verbose {
         println!("{}", line);
     }
-    if ui_handle.is_some() {
-        let ui = ui_handle.as_ref().unwrap();
+
+    if let Some(ui) = ui_handle {
         ui.set_title_field(line.into());
     }
 }
@@ -146,16 +146,15 @@ fn count_me_down(
         .ok_or(PlatformError::Other("Could not add signed".to_string()))?;
 
     let mut countdown_seconds: i64 = seconds.into();
-    let gui: bool = ui_handle.is_some();
-    let ui: Option<CountMeDownGUI> = if gui {
-        Some(ui_handle.unwrap().as_weak().unwrap())
+    let ui = if let Some(gui) = ui_handle {
+        Some(gui.as_weak().unwrap())
     } else {
         None
     };
 
     while Local::now().timestamp() < end.timestamp() {
         let line = format!("{} {}", prefix, format_time(countdown_seconds));
-        if gui {
+        if ui.is_some() {
             write_to_file(&line, filepath, verbose, &ui);
         } else {
             write_to_file(&line, filepath, verbose, &None);
