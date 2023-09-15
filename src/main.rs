@@ -244,6 +244,21 @@ pub struct Cli {
     until: bool,
 }
 
+fn text_or_default(s: SharedString, default: &str) -> String {
+    if s.as_str().to_owned().is_empty() {
+        default.into()
+    } else {
+        s.as_str().to_owned()
+    }
+}
+
+fn get_texts(ui: &CountMeDownGUI) -> (String, String, String) {
+    let time_in = text_or_default(ui.get_time_text(), "10:00");
+    let prefix = text_or_default(ui.get_prefix_text(), "");
+    let ending = text_or_default(ui.get_ending_text(), "");
+    (time_in, prefix, ending)
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let prefix: String;
     let ending: String;
@@ -351,23 +366,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 println!("Prefix: {}", ui.get_prefix_text());
                 println!("Ending: {}", ui.get_ending_text());
 
-                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
-                    "10:00".into()
-                } else {
-                    ui.get_time_text().as_str().to_owned()
-                };
-
-                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_prefix_text().as_str().to_owned()
-                };
-
-                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_ending_text().as_str().to_owned()
-                };
+                let (time_in, prefix, ending) = get_texts(&ui);
 
                 let filepath: String = ui.get_file_path().as_str().to_owned();
 
@@ -405,23 +404,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let ui = ui_handle_save.unwrap();
 
             if enabled {
-                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
-                    "10:00".into()
-                } else {
-                    ui.get_time_text().as_str().to_owned()
-                };
-
-                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_prefix_text().as_str().to_owned()
-                };
-
-                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
-                    "".into()
-                } else {
-                    ui.get_ending_text().as_str().to_owned()
-                };
+                let (time_in, prefix, ending) = get_texts(&ui);
 
                 let filepath: String = ui.get_file_path().as_str().to_owned();
 
