@@ -16,11 +16,13 @@ import { LineEdit, Button, VerticalBox } from "std-widgets.slint";
         callback check-step-in(string);
         in-out property <brush> step_label_color <=> step_label.color;
 
-        out property <string> prefix_text <=> prefix_box.text;
-        out property <string> ending_text <=> ending_box.text;
-        out property <string> step_size <=> step_input.text;
-        out property <string> time_text <=> time_in.text;
+        in-out property <string> prefix_text <=> prefix_box.text;
+        in-out property <string> ending_text <=> ending_box.text;
+        in-out property <string> step_size <=> step_input.text;
+        in-out property <string> time_text <=> time_in.text;
         callback run-clicked(bool);
+        callback run-save(bool);
+        callback run-load(bool);
 
         in-out property <string> title-field <=> title_text.text;
 
@@ -98,12 +100,23 @@ import { LineEdit, Button, VerticalBox } from "std-widgets.slint";
             }
 
             HorizontalLayout {
+                spacing: 2px;
                 padding-top: 10px;
                 alignment: center;
                 Button {
                     text: "Start";
                     enabled: root.valid;
                     clicked => {root.run-clicked(self.enabled);}
+                }
+                Button {
+                    text: "Save";
+                    enabled: root.valid;
+                    clicked => {root.run-save(self.enabled);}
+                }
+                Button {
+                    text: "Load";
+                    enabled: root.valid;
+                    clicked => {root.run-load(self.enabled);}
                 }
         }
     }

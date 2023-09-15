@@ -1,6 +1,6 @@
 [package]
 name = "countmedown-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 build = "build.rs"
 
@@ -9,7 +9,10 @@ build = "build.rs"
 [dependencies]
 chrono = "0.4.28"
 clap = { version = "4.4.2", features = ["derive"] }
+directories = "5.0.1"
 rfd = "0.12.0"
+ron = "0.8.1"
+serde = { version = "1.0.188", features = ["derive"]}
 slint = "1.2"
 
 [build-dependencies]

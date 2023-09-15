@@ -1,12 +1,23 @@
 use chrono::{DateTime, Duration, Local, Timelike};
 use clap::Parser;
+use directories::BaseDirs;
 use rfd::FileDialog;
+use ron::{from_str, to_string};
+use serde::{Deserialize, Serialize};
 use slint::{Color, PlatformError, SharedString};
-use std::{env, env::current_dir, fs::write, num::ParseIntError, path::PathBuf, thread};
+use std::fs::create_dir_all;
+use std::path::Path;
+use std::{
+    env, env::current_dir, fs::read_to_string, fs::write, num::ParseIntError, path::PathBuf, thread,
+};
 
 slint::include_modules!();
 
 fn validate_string_inputs(s: &str, colon_allowed: bool) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+
     let mut allowed_chars = vec!['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     if colon_allowed {
         allowed_chars.push(':');
@@ -158,6 +169,63 @@ fn count_me_down(
     Ok(())
 }
 
+#[derive(Deserialize, Serialize)]
+struct RustMeDownConfig {
+    time_in: String,
+    prefix: String,
+    ending: String,
+    step: usize,
+    filepath: String,
+}
+
+impl RustMeDownConfig {
+    fn from_serialized_config() -> Option<RustMeDownConfig> {
+        if let Some(base_dirs) = BaseDirs::new() {
+            let mut config_file = base_dirs.config_local_dir().to_path_buf();
+            config_file.push("CountMeDown/countMeDown.ron");
+            if config_file.exists() {
+                let serialized_data = read_to_string(config_file);
+                if let Ok(data) = serialized_data {
+                    let config = from_str::<RustMeDownConfig>(data.as_str());
+                    if let Ok(data) = config {
+                        return Some(data);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn serialize_to_disk(&self) {
+        if let Some(base_dirs) = BaseDirs::new() {
+            let mut config_file = base_dirs.config_local_dir().to_path_buf();
+            config_file.push("CountMeDown/countMeDown.ron");
+            let config_file_copy = config_file.clone();
+            let _ = create_dir_all(config_file_copy.parent().unwrap());
+
+            let serialized = to_string(&self);
+            if let Ok(config) = serialized {
+                write(config_file, config).expect("Could not save config");
+            }
+        }
+    }
+
+    fn get_seconds(&self) -> Result<u32, ParseIntError> {
+        let parts: Vec<&str> = self.time_in.split(':').collect();
+
+        let mut factor: i64 = 1;
+        let mut seconds: i64 = 0;
+
+        for part in parts.into_iter().rev() {
+            let s: i64 = part.parse()?;
+            seconds += factor * s;
+            factor *= 60;
+        }
+
+        Ok(seconds as u32)
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
@@ -221,6 +289,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_handle_run = ui.as_weak();
         let ui_handle_title = ui.as_weak();
 
+        let ui_handle_save = ui.as_weak();
+        let ui_handle_load = ui.as_weak();
+
         ui.on_check_time_in(move |val: SharedString| {
             let valid = validate_string_inputs(&val, true);
             let ui = ui_handle_time_in.unwrap();
@@ -280,6 +351,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 println!("Prefix: {}", ui.get_prefix_text());
                 println!("Ending: {}", ui.get_ending_text());
 
+                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
+                    "10:00".into()
+                } else {
+                    ui.get_time_text().as_str().to_owned()
+                };
+
                 let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
                     "".into()
                 } else {
@@ -295,25 +372,90 @@ fn main() -> Result<(), slint::PlatformError> {
                 let filepath: String = ui.get_file_path().as_str().to_owned();
 
                 let step: usize = ui.get_step_size().parse().unwrap_or(1);
-                let seconds = get_seconds_from_mixed_format(ui.get_time_text().as_str())
-                    .unwrap_or(Duration::seconds(600))
-                    .num_seconds() as u32;
+
+                let config = RustMeDownConfig {
+                    time_in,
+                    prefix,
+                    ending,
+                    step,
+                    filepath,
+                };
+
                 let verbose = true;
 
                 let _ = count_me_down(
-                    seconds,
-                    &prefix,
-                    &ending,
-                    step,
-                    &filepath,
+                    config.get_seconds().unwrap(),
+                    config.prefix.as_str(),
+                    config.ending.as_str(),
+                    config.step,
+                    config.filepath.as_str(),
                     verbose,
                     Some(ui_handle),
                 );
-                if ending.is_empty() {
+                if config.ending.is_empty() {
                     ui.set_title_field("CountMeDown".into());
                 } else {
-                    ui.set_title_field(ending.into());
+                    let ending_copy = config.ending.to_string();
+                    ui.set_title_field(ending_copy.into());
                 }
+            }
+        });
+
+        ui.on_run_save(move |enabled| {
+            let ui = ui_handle_save.unwrap();
+
+            if enabled {
+                let time_in: String = if ui.get_time_text().as_str().to_owned().is_empty() {
+                    "10:00".into()
+                } else {
+                    ui.get_time_text().as_str().to_owned()
+                };
+
+                let prefix: String = if ui.get_prefix_text().as_str().to_owned().is_empty() {
+                    "".into()
+                } else {
+                    ui.get_prefix_text().as_str().to_owned()
+                };
+
+                let ending: String = if ui.get_ending_text().as_str().to_owned().is_empty() {
+                    "".into()
+                } else {
+                    ui.get_ending_text().as_str().to_owned()
+                };
+
+                let filepath: String = ui.get_file_path().as_str().to_owned();
+
+                let step: usize = ui.get_step_size().parse().unwrap_or(1);
+
+                let config = RustMeDownConfig {
+                    time_in,
+                    prefix,
+                    ending,
+                    step,
+                    filepath,
+                };
+
+                config.serialize_to_disk();
+
+                ui.set_title_field("Cofig saved!".into());
+            }
+        });
+
+        ui.on_run_load(move |enabled| {
+            let ui = ui_handle_load.unwrap();
+
+            if enabled {
+                let config = RustMeDownConfig::from_serialized_config();
+
+                if let Some(config) = config {
+                    let file_path = Path::new(&config.filepath);
+                    ui.set_file_name(file_path.file_name().unwrap().to_str().unwrap().into());
+                    ui.set_file_path(config.filepath.into());
+                    ui.set_step_size(config.step.to_string().into());
+                    ui.set_ending_text(config.ending.into());
+                    ui.set_prefix_text(config.prefix.into());
+                    ui.set_time_text(config.time_in.into());
+                };
             }
         });
 
