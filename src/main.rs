@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use chrono::{DateTime, Duration, Local, Timelike};
 use clap::Parser;
 use directories::BaseDirs;
