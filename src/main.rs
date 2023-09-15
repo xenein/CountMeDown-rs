@@ -201,7 +201,7 @@ impl RustMeDownConfig {
             let mut config_file = base_dirs.config_local_dir().to_path_buf();
             config_file.push("CountMeDown/countMeDown.ron");
             let config_file_copy = config_file.clone();
-            let _ = create_dir_all(config_file_copy.parent().unwrap());
+            let _ = create_dir_all(config_file_copy.parent().unwrap()); // Safe unwrap, as a file always has a parent.
 
             let serialized = to_string(&self);
             if let Ok(config) = serialized {
