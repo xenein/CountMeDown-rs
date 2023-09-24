@@ -6,11 +6,11 @@ use directories::BaseDirs;
 use rfd::FileDialog;
 use ron::{from_str, to_string};
 use serde::{Deserialize, Serialize};
-use slint::{Color, PlatformError, SharedString};
+use slint::{Color, PlatformError, SharedString, Timer, TimerMode};
 use std::fs::create_dir_all;
-use std::path::Path;
 use std::{
-    env, env::current_dir, fs::read_to_string, fs::write, num::ParseIntError, path::PathBuf, thread,
+    env, env::current_dir, fs::read_to_string, fs::write, num::ParseIntError, ops::Deref,
+    path::Path, path::PathBuf, sync::Arc, sync::RwLock, thread,
 };
 
 slint::include_modules!();
@@ -117,19 +117,16 @@ fn get_seconds_from_mixed_format(input: &str) -> Result<Duration, ParseIntError>
     Ok(Duration::seconds(seconds))
 }
 
-fn write_to_file(line: &str, filepath: &str, verbose: bool, ui_handle: &Option<CountMeDownGUI>) {
+fn write_to_file(line: &str, filepath: &str, verbose: bool) {
     match write(filepath, line) {
         Ok(_) => {}
         Err(error) => {
             println!("{}", error)
         }
     };
+
     if verbose {
         println!("{}", line);
-    }
-
-    if let Some(ui) = ui_handle {
-        ui.set_title_field(line.into());
     }
 }
 
@@ -140,7 +137,6 @@ fn count_me_down(
     step: usize,
     filepath: &str,
     verbose: bool,
-    ui_handle: Option<CountMeDownGUI>,
 ) -> Result<(), PlatformError> {
     let current = Local::now();
     let end = current
@@ -148,29 +144,21 @@ fn count_me_down(
         .ok_or(PlatformError::Other("Could not add signed".to_string()))?;
 
     let mut countdown_seconds: i64 = seconds.into();
-    let ui = if let Some(gui) = ui_handle {
-        Some(gui.as_weak().unwrap())
-    } else {
-        None
-    };
 
     while Local::now().timestamp() < end.timestamp() {
         let line = format!("{} {}", prefix, format_time(countdown_seconds));
-        if ui.is_some() {
-            write_to_file(&line, filepath, verbose, &ui);
-        } else {
-            write_to_file(&line, filepath, verbose, &None);
-        }
+
+        write_to_file(&line, filepath, verbose);
 
         countdown_seconds -= step as i64;
         thread::sleep(std::time::Duration::from_secs(step as u64));
     }
 
-    write_to_file(ending, filepath, verbose, &None);
+    write_to_file(ending, filepath, verbose);
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 struct RustMeDownConfig {
     time_in: String,
     prefix: String,
@@ -208,6 +196,21 @@ impl RustMeDownConfig {
             if let Ok(config) = serialized {
                 write(config_file, config).expect("Could not save config");
             }
+        }
+    }
+
+    fn default() -> Self {
+        RustMeDownConfig {
+            time_in: "10:00".into(),
+            prefix: "Start in:".into(),
+            ending: "gleich".into(),
+            step: 1usize,
+            filepath: current_dir()
+                .unwrap()
+                .join("time.txt")
+                .to_str()
+                .unwrap()
+                .into(),
         }
     }
 
@@ -294,7 +297,7 @@ fn main() -> Result<(), slint::PlatformError> {
         filepath = cli.file.unwrap_or("./time.txt".into());
         verbose = cli.verbose;
 
-        let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose, None);
+        let _ = count_me_down(seconds, &prefix, &ending, step, &filepath, verbose);
         Ok(())
     } else {
         let ui = CountMeDownGUI::new()?;
@@ -303,10 +306,27 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_handle_file_dialog = ui.as_weak();
         let ui_handle_step_in = ui.as_weak();
         let ui_handle_run = ui.as_weak();
-        let ui_handle_title = ui.as_weak();
 
         let ui_handle_save = ui.as_weak();
         let ui_handle_load = ui.as_weak();
+
+        let remaining_seconds_lock = Arc::new(RwLock::new(0u32));
+        let remaining_lock_write = Arc::clone(&remaining_seconds_lock);
+        let remaining_lock_timer = Arc::clone(&remaining_seconds_lock);
+
+        let step_lock = Arc::new(RwLock::new(3usize));
+        let step_lock_write = Arc::clone(&step_lock);
+
+        let timer_run_lock = Arc::new(RwLock::new(false));
+        let timer_run_lock_timer = Arc::clone(&timer_run_lock);
+        let timer_run_lock_write = Arc::clone(&timer_run_lock);
+
+        let timer = Timer::default();
+        let ui_handle_timer = ui.as_weak();
+
+        let run_config_lock = Arc::new(RwLock::new(RustMeDownConfig::default()));
+        let run_config_write = Arc::clone(&run_config_lock);
+        let run_config_timer = Arc::clone(&run_config_lock);
 
         ui.on_check_time_in(move |val: SharedString| {
             let valid = validate_string_inputs(&val, true);
@@ -359,7 +379,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
         ui.on_run_clicked(move |enabled| {
             let ui = ui_handle_run.unwrap();
-            let ui_handle = ui_handle_title.unwrap();
+
             if enabled {
                 println!("Time: {}", ui.get_time_text());
                 println!("Step: {}", ui.get_step_size());
@@ -373,31 +393,34 @@ fn main() -> Result<(), slint::PlatformError> {
 
                 let step: usize = ui.get_step_size().parse().unwrap_or(1);
 
-                let config = RustMeDownConfig {
-                    time_in,
-                    prefix,
-                    ending,
-                    step,
-                    filepath,
-                };
+                {
+                    let mut write_config = run_config_write.write().unwrap();
+                    *write_config = RustMeDownConfig {
+                        time_in,
+                        prefix,
+                        ending,
+                        step,
+                        filepath,
+                    };
 
-                let verbose = true;
+                    let mut write_timer_run = timer_run_lock_write.write().unwrap();
+                    *write_timer_run = !*write_timer_run.deref();
 
-                let _ = count_me_down(
+                    let mut write_step = step_lock_write.write().unwrap();
+                    *write_step = write_config.step.to_owned();
+
+                    let mut write_remaining = remaining_lock_write.write().unwrap();
+                    *write_remaining = write_config.get_seconds().unwrap_or(600);
+                }
+
+                /*                let _ = count_me_down(
                     config.get_seconds().unwrap(),
                     config.prefix.as_str(),
                     config.ending.as_str(),
                     config.step,
                     config.filepath.as_str(),
                     verbose,
-                    Some(ui_handle),
-                );
-                if config.ending.is_empty() {
-                    ui.set_title_field("CountMeDown".into());
-                } else {
-                    let ending_copy = config.ending.to_string();
-                    ui.set_title_field(ending_copy.into());
-                }
+                );*/
             }
         });
 
@@ -442,6 +465,70 @@ fn main() -> Result<(), slint::PlatformError> {
                 };
             }
         });
+
+        let mut steps: u32 = 0;
+
+        timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_secs(1),
+            move || {
+                let ui = ui_handle_timer.unwrap();
+
+                let remaining_guard = remaining_lock_timer.read().unwrap();
+                let remaining_seconds = remaining_guard.deref();
+
+                let read_timer_run = timer_run_lock_timer.read().unwrap();
+                let mut finished: bool = false;
+                if *read_timer_run.deref() && !finished {
+                    let sep= if steps % 2 == 0 {
+                        ":"
+                    } else {
+                        " "
+                    };
+
+                    let actual_remaining: i64 = (remaining_seconds - steps) as i64;
+                    let line = format!(
+                        "{} {}",
+                        ui.get_prefix_text(),
+                        format_time(actual_remaining).replace(':', sep)
+                    );
+
+                    ui.set_title_field(line.to_string().into());
+
+                    let path = {
+                        let config_guard = run_config_timer.read().unwrap();
+                        config_guard.deref().filepath.to_string()
+                    };
+
+                    write_to_file(&line.to_string(), &path, true);
+
+                    steps += 1;
+                    if steps > *remaining_seconds {
+                        finished = true;
+                    }
+                }
+                if finished {
+                    let (ending, path) = {
+                        let config_guard = run_config_timer.read().unwrap();
+                        let ending = config_guard.deref().ending.to_string();
+                        let path = config_guard.deref().filepath.to_string();
+                        (ending, path)
+                    };
+
+                    let title = {
+                        if ending.is_empty() {
+                            "CountMeDown".into()
+                        } else {
+                            ending.to_string()
+                        }
+                    };
+
+                    ui.set_title_field(title.into());
+
+                    write_to_file(&ending.to_string(), &path, true);
+                }
+            },
+        );
 
         ui.run()
     }
