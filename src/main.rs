@@ -263,6 +263,15 @@ fn get_texts(ui: &CountMeDownGUI) -> (String, String, String) {
     (time_in, prefix, ending)
 }
 
+macro_rules! enclose {
+    ( ($( $x:ident ),*) $y:expr ) => {
+        {
+            $(let $x = $x.clone();)*
+            $y
+        }
+    };
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let prefix: String;
     let ending: String;
@@ -302,13 +311,7 @@ fn main() -> Result<(), slint::PlatformError> {
     } else {
         let ui = CountMeDownGUI::new()?;
 
-        let ui_handle_time_in = ui.as_weak();
-        let ui_handle_file_dialog = ui.as_weak();
-        let ui_handle_step_in = ui.as_weak();
-        let ui_handle_run = ui.as_weak();
-
-        let ui_handle_save = ui.as_weak();
-        let ui_handle_load = ui.as_weak();
+        let weak = ui.as_weak();
 
         let remaining_seconds_lock = Arc::new(RwLock::new(0u32));
         let remaining_lock_write = Arc::clone(&remaining_seconds_lock);
@@ -322,33 +325,32 @@ fn main() -> Result<(), slint::PlatformError> {
         let timer_run_lock_write = Arc::clone(&timer_run_lock);
 
         let timer = Timer::default();
-        let ui_handle_timer = ui.as_weak();
 
         let run_config_lock = Arc::new(RwLock::new(RustMeDownConfig::default()));
         let run_config_write = Arc::clone(&run_config_lock);
         let run_config_timer = Arc::clone(&run_config_lock);
 
-        ui.on_check_time_in(move |val: SharedString| {
+        ui.on_check_time_in(enclose! { (weak) move |val: SharedString| {
             let valid = validate_string_inputs(&val, true);
-            let ui = ui_handle_time_in.unwrap();
+            let ui = weak.unwrap();
 
             ui.set_time_valid(valid);
             let new_color = get_new_color(valid, ui.get_bg());
 
             ui.set_time_in_label(new_color);
-        });
+        }});
 
-        ui.on_check_step_in(move |val: SharedString| {
+        ui.on_check_step_in(enclose! { (weak) move |val: SharedString| {
             let valid = validate_string_inputs(&val, false);
-            let ui = ui_handle_step_in.unwrap();
+            let ui = weak.unwrap();
 
             ui.set_step_valid(valid);
             let new_color = get_new_color(valid, ui.get_bg());
             ui.set_step_label_color(new_color);
-        });
+        }});
 
-        ui.on_open_file_dialog(move |path| {
-            let ui = ui_handle_file_dialog.unwrap();
+        ui.on_open_file_dialog(enclose! { (weak) move |path| {
+            let ui = weak.unwrap();
             let startfile: PathBuf;
             let filename: &str;
             if path == "Pick" {
@@ -375,10 +377,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     ui.set_file_name(startfile.file_name().unwrap().to_str().unwrap().into());
                 }
             }
-        });
+        }});
 
-        ui.on_run_clicked(move |enabled| {
-            let ui = ui_handle_run.unwrap();
+        ui.on_run_clicked(enclose! { (weak) move |enabled| {
+            let ui = weak.unwrap();
 
             if enabled {
                 println!("Time: {}", ui.get_time_text());
@@ -422,10 +424,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     verbose,
                 );*/
             }
-        });
+        }});
 
-        ui.on_run_save(move |enabled| {
-            let ui = ui_handle_save.unwrap();
+        ui.on_run_save(enclose! { (weak) move |enabled| {
+            let ui = weak.unwrap();
 
             if enabled {
                 let (time_in, prefix, ending) = get_texts(&ui);
@@ -446,10 +448,10 @@ fn main() -> Result<(), slint::PlatformError> {
 
                 ui.set_title_field("Cofig saved!".into());
             }
-        });
+        }});
 
-        ui.on_run_load(move |enabled| {
-            let ui = ui_handle_load.unwrap();
+        ui.on_run_load(enclose! { (weak) move |enabled| {
+            let ui = weak.unwrap();
 
             if enabled {
                 let config = RustMeDownConfig::from_serialized_config();
@@ -464,15 +466,16 @@ fn main() -> Result<(), slint::PlatformError> {
                     ui.set_time_text(config.time_in.into());
                 };
             }
-        });
+        }});
 
         let mut steps: u32 = 0;
 
         timer.start(
             TimerMode::Repeated,
             std::time::Duration::from_secs(1),
+            enclose! { (weak)
             move || {
-                let ui = ui_handle_timer.unwrap();
+                let ui = weak.unwrap();
 
                 let remaining_guard = remaining_lock_timer.read().unwrap();
                 let remaining_seconds = remaining_guard.deref();
@@ -480,11 +483,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 let read_timer_run = timer_run_lock_timer.read().unwrap();
                 let mut finished: bool = false;
                 if *read_timer_run.deref() && !finished {
-                    let sep= if steps % 2 == 0 {
-                        ":"
-                    } else {
-                        " "
-                    };
+                    let sep = if steps % 2 == 0 { ":" } else { " " };
 
                     let actual_remaining: i64 = (remaining_seconds - steps) as i64;
                     let line = format!(
@@ -527,8 +526,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     write_to_file(&ending.to_string(), &path, true);
                 }
-            },
-        );
+        }});
 
         ui.run()
     }
